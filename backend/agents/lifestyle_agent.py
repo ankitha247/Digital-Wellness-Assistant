@@ -20,13 +20,15 @@ Give SHORT, ACTIONABLE lifestyle suggestions related to:
 - stress
 - time management
 
-RULES:
-- Do NOT ask questions.
-- Do NOT request more details.
-- Do NOT give long paragraphs.
-- Do NOT restate the user's message.
-- Provide 3–4 practical tips only.
-- Keep response under 5 lines.
+
+RESPONSE RULES:
+- Use as few sentences as possible.
+- Prefer 3–5 short bullet points.
+- NEVER exceed 6 short sentences.
+- Avoid long explanations or big paragraphs.
+- Do NOT repeat the user's message.
+- Do NOT ask the user for more details if profile already exists.
+.
 
 User message:
 \"\"\"{message}\"\"\"

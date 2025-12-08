@@ -30,6 +30,12 @@ Your output:
 - Directly suggest what to eat and what to avoid.
 - Focus on the user's likely goals based on profile and context.
 - No disclaimers, no long essays, no questions.
+- Use as few sentences as possible.
+- Prefer 3–5 short bullet points.
+- NEVER exceed 6 short sentences.
+- Avoid long explanations or big paragraphs.
+- Do NOT repeat the user's message.
+- Do NOT ask the user for more details if profile already exists.
 """
 
     response = llm.invoke(prompt).content

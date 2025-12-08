@@ -14,8 +14,8 @@ Lifestyle habits (sleep, routine, stress)
 
 The backend automatically chooses which agent to use based on LLM reasoning, NOT rule-based or keyword matching.
 
-🚀 Features
-✔ User Authentication
+Features
+*User Authentication
 
 Signup (email + password)
 
@@ -25,7 +25,7 @@ Secure password hashing
 
 Google Auth ready
 
-✔ User Profile
+*User Profile
 
 Each user can set:
 
@@ -45,7 +45,7 @@ Health Conditions
 
 This stored profile helps the system give personalized suggestions.
 
-✔ Hands-Off Multi-Agent Architecture
+*Hands-Off Multi-Agent Architecture
 
 The assistant uses four specialized agents:
 
@@ -65,22 +65,22 @@ When to stop (FINISH)
 
 No keyword-based logic is used — everything is decided through LLM reasoning.
 
-🧠 How It Works (Backend Flow)
-1️⃣ User signs up / logs in
+ How It Works (Backend Flow)
+1.User signs up / logs in
 
 Auth system creates a user in the database.
 
-2️⃣ User creates their profile
+2.User creates their profile
 
 Stored in MySQL and used in all future responses.
 
-3️⃣ User sends a wellness query
+3.User sends a wellness query
 
 Example:
 
 “I feel dizzy during workouts.”
 
-4️⃣ Supervisor LLM decides which agent to call
+4.Supervisor LLM decides which agent to call
 
 For example:
 
@@ -90,11 +90,11 @@ DietAgent (pre-workout food)
 
 FitnessAgent (intensity issues)
 
-5️⃣ Agents generate short, practical suggestions
+5.Agents generate short, practical suggestions
 
 Then the supervisor may call another agent if needed.
 
-6️⃣ Chat API returns final JSON
+6.Chat API returns final JSON
 {
   "response": "Your advice here...",
   "agents_used": ["SymptomAgent", "DietAgent"]
@@ -166,12 +166,12 @@ backend/
 │── requirements.txt
 │── .env (ignored)
 
-🔐 Environment Variables (.env)
+Environment Variables (.env)
 GROQ_API_KEY=your_key_here
 JWT_SECRET=your_secret_here
 DATABASE_URL=mysql+pymysql://username:password@host/database_name
 
-▶️ Running the Server
+ Running the Server
 1. Create a virtual environment
 python -m venv venv
 

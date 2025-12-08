@@ -7,6 +7,11 @@ def synthesize_output(state: dict) -> str:
     Generate a SHORT, SIMPLE, USER-FRIENDLY summary.
     Each section should be 2–3 lines only.
     If a category is not in state, skip it.
+    Combine the agent outputs into ONE concise answer.
+    Do not exceed 7 sentences total.
+    Remove repetition.
+    Keep only the most important 3–6 ideas.
+
     """
 
     output = []

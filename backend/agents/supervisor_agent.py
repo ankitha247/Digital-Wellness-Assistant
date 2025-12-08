@@ -1,3 +1,5 @@
+# backend/agents/supervisor_agent.py
+
 import json
 from agents.groq_client import get_llm
 
@@ -5,6 +7,10 @@ llm = get_llm()
 
 
 def _extract_json(text: str):
+    """
+    Try to extract a JSON object from the LLM output.
+    If it fails, return None.
+    """
     if not text:
         return None
 
@@ -22,86 +28,89 @@ def _extract_json(text: str):
 
 def supervisor(user_message: str, profile: dict | None, state: dict) -> str:
     """
-    Pure reasoning LLM supervisor.
-    No keywords. No rule-based logic.
-    LLM must output only JSON: {"next_agent": "..."}
+    Supervisor LLM:
+    - Receives current user message, user profile, and the orchestration state.
+    - Uses reasoning (not keyword matching) to decide which ONE agent to call next.
+    - Reads conversation_history from LangChain ConversationBufferMemory via state["conversation_history"].
+    - Returns: "SymptomAgent" | "DietAgent" | "FitnessAgent" | "LifestyleAgent" | "FINISH"
     """
 
+    conversation_history = state.get("conversation_history", "No previous conversation yet.")
+    intent = state.get("intent", {})
+
+    # Remove large or irrelevant fields from state when showing to LLM
+    cleaned_state = {k: v for k, v in state.items() if k not in ["conversation_history", "intent"]}
+
     SUPERVISOR_PROMPT = f"""
-        You are the SUPERVISOR of a multi-agent Digital Wellness Assistant.
+You are the SUPERVISOR of a multi-agent Digital Wellness Assistant.
 
-Your task:
-Decide which ONE agent should run NEXT using pure reasoning based on:
-- the user's message
-- the user's profile
-- information already collected in state
+Your role:
+- Decide which ONE specialized agent should run NEXT.
+- Use deep reasoning, not simple keyword matching.
+- You must consider:
+  - The current user message
+  - The user's stored profile
+  - The previous conversation history
+  - The outputs of any agents already called in this turn (state)
+  - The user's general intent: {intent}
 
-Think like a wellness expert who understands problems holistically.
+CONVERSATION HISTORY (from LangChain ConversationBufferMemory):
+{conversation_history}
 
-AGENT SPECIALIZATIONS:
+CURRENT USER MESSAGE:
+\"\"\"{user_message}\"\"\"
 
-1. SymptomAgent  
-   - When the user expresses discomfort, fatigue, stress, pain, dizziness, or low energy.
+USER PROFILE:
+{profile}
 
-2. DietAgent  
-   - When the concern involves food, nutrition, weight change, appetite, digestion,
-     or when weight-loss/gain goals are mentioned.
+CURRENT ORCHESTRATION STATE (agent outputs so far in THIS turn):
+{cleaned_state}
 
-3. FitnessAgent  
-   - When the concern includes exercise, physical activity, gym progress, stamina, or posture.
+AVAILABLE AGENTS AND WHAT THEY DO:
 
-4. LifestyleAgent  
-   - When the issue involves sleep, motivation, consistency, stress, routine,
-     productivity, or daily habits.
+1. SymptomAgent
+   - Understands physical and mental symptoms.
+   - Use when the user talks about pain, discomfort, fatigue, dizziness, headaches, stress, or feeling unwell.
 
-REASONING RULES:
+2. DietAgent
+   - Handles food, nutrition, digestion, bloating, hydration, weight change, diet plans.
+   - Use when diet or eating patterns matter.
 
-- Do NOT use keyword matching.
-- Infer the underlying needs from the meaning of the user's message.
-- Choose ONLY ONE agent at a time.
-- Never repeat an agent already in the state.
-- Use the minimum number of agents needed to solve the problem.
-- Multi-dimensional problems may require 2–4 agents in sequence.
-- If all relevant agents have contributed → return FINISH.
+3. FitnessAgent
+   - Handles exercise, workouts, gym progress, posture, stamina, muscle gain, not seeing results from workouts.
 
-WHEN TO STOP:
-Return FINISH when:
-- Enough insights have been gathered OR
-- No remaining agent can add meaningful value.
+4. LifestyleAgent
+   - Handles sleep, stress, habits, routines, burnout, time management, consistency.
 
-OUTPUT FORMAT:
-Return ONLY valid JSON:
+SELECTION GUIDELINES (VERY IMPORTANT):
 
+- Use as FEW agents as possible to answer the user well.
+- Most questions need ONLY 1 or 2 agents.
+- DO NOT call all agents unless the situation really involves many dimensions.
+- DO NOT rely on exact keyword matching. Infer the user's real needs from meaning & context.
+- NEVER call the same agent twice in this turn.
+- If the main concern is already addressed by the agents in the state, choose "FINISH".
+
+OUTPUT FORMAT (STRICT):
+
+You MUST respond with ONLY valid JSON, no extra text, no Markdown, no explanation.
+
+Example:
 {{
-  "next_agent": "DietAgent"
+  "next_agent": "SymptomAgent"
 }}
 
-or:
-
+Or:
 {{
   "next_agent": "FINISH"
 }}
-
-No explanations. No markdown.
-
-USER MESSAGE:
-\"\"\"{user_message}\"\"\"
-
-PROFILE:
-{profile}
-
-STATE:
-{state}
 """
 
-    # Run LLM
-    raw = llm.invoke(SUPERVISOR_PROMPT).content
-
-    # Extract JSON safely
+    raw = llm.invoke(SUPERVISOR_PROMPT).content.strip()
     data = _extract_json(raw)
+
     if not data or "next_agent" not in data:
-        raise ValueError(
-            f"Supervisor did not return valid JSON with 'next_agent'. Raw output:\n{raw}"
-        )
+        # Fallback: if LLM misbehaves, do not break the system.
+        return "FINISH"
 
     return data["next_agent"]

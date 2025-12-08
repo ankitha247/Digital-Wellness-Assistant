@@ -1,92 +1,126 @@
-from typing import Dict, Any, Optional, List
+# backend/database.py
 
-# -----------------------------
-# In-memory "database" storage
-# -----------------------------
+from typing import Dict, Any, List, Optional
+from datetime import datetime
 
-_users: Dict[int, Dict[str, Any]] = {}
-_users_by_email: Dict[str, Dict[str, Any]] = {}
+# ---------------------------------
+# In-memory "database" structures
+# ---------------------------------
 
-_profiles: Dict[int, Dict[str, Any]] = {}
+# user_id -> user dict
+_mock_users: Dict[int, Dict[str, Any]] = {}
 
-_message_history: Dict[int, List[Dict[str, str]]] = {}
+# email -> user_id
+_email_to_user_id: Dict[str, int] = {}
+
+# user_id -> profile dict
+_mock_profiles: Dict[int, Dict[str, Any]] = {}
+
+# user_id -> list of conversation turns
+# each turn: {timestamp, user_message, assistant_response, agents_used}
+_conversation_turns: Dict[int, List[Dict[str, Any]]] = {}
 
 
-# -----------------------------
+# ---------------------------------
 # USER FUNCTIONS
-# -----------------------------
+# ---------------------------------
 
-def save_user(user: Dict[str, Any]) -> Dict[str, Any]:
+def save_user(user_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Save a user in memory.
-    If 'id' is not present, assign a new one.
-    Also index by email for quick lookup.
+    Save a new user and return the full user record (including its id).
+    user_data is expected to contain at least: email, password_hash, name
     """
-    user_id = user.get("id")
+    new_id = len(_mock_users) + 1
+    user_record = {
+        "id": new_id,
+        **user_data,
+    }
+    _mock_users[new_id] = user_record
 
-    if user_id is None:
-        user_id = max(_users.keys(), default=0) + 1
-        user["id"] = user_id
-
-    _users[user_id] = user
-
-    email = user.get("email")
+    email = user_data.get("email")
     if email:
-        _users_by_email[email] = user
+        _email_to_user_id[email] = new_id
 
-    return user
+    return user_record
 
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     """
-    Return user dict if email exists, else None.
+    Return the user dict for this email, or None if not found.
     """
-    return _users_by_email.get(email)
+    user_id = _email_to_user_id.get(email)
+    if user_id is None:
+        return None
+    return _mock_users.get(user_id)
 
 
 def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     """
-    Return user dict if user_id exists, else None.
+    Return the user dict for this user_id, or None if not found.
     """
-    return _users.get(user_id)
+    return _mock_users.get(user_id)
 
 
-# -----------------------------
+# ---------------------------------
 # PROFILE FUNCTIONS
-# -----------------------------
+# ---------------------------------
 
-def save_profile(profile: Dict[str, Any]) -> None:
+def save_profile(user_id: int, profile_data: Dict[str, Any]) -> None:
     """
-    Save or update a user's wellness profile in memory.
-    Keyed by user_id.
+    Create or update a profile for the given user_id.
+    Example fields: age, gender, weight, height, diet_type, activity_level,
+    sleep_hours, health_conditions, fitness_goal, etc.
     """
-    user_id = profile["user_id"]
-    _profiles[user_id] = profile
-
-
-def get_profile(user_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Get the wellness profile for a user, or None if missing.
-    """
-    return _profiles.get(user_id)
+    _mock_profiles[user_id] = {
+        "user_id": user_id,
+        **profile_data,
+    }
 
 
-# -----------------------------
-# MESSAGE HISTORY (optional)
-# -----------------------------
-
-def append_message(user_id: int, role: str, content: str) -> None:
+def get_profile(user_id: int) -> Dict[str, Any]:
     """
-    Save one message in the history for a given user.
-    role: "user" | "assistant"
+    Return the profile dict for this user_id.
+    If no profile exists, return an empty dict.
     """
-    if user_id not in _message_history:
-        _message_history[user_id] = []
-    _message_history[user_id].append({"role": role, "content": content})
+    return _mock_profiles.get(user_id, {})
 
 
-def get_message_history(user_id: int) -> List[Dict[str, str]]:
+# ---------------------------------
+# CONVERSATION HISTORY (for /history API)
+# ---------------------------------
+
+def append_conversation_turn(
+    user_id: int,
+    user_message: str,
+    assistant_response: str,
+    agents_used: List[str],
+) -> None:
     """
-    Return list of message dicts for the user, or empty list.
+    Store one conversation turn for this user:
+    - timestamp
+    - user_message
+    - assistant_response
+    - agents_used
     """
-    return _message_history.get(user_id, [])
+    if user_id not in _conversation_turns:
+        _conversation_turns[user_id] = []
+
+    _conversation_turns[user_id].append(
+        {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "user_message": user_message,
+            "assistant_response": assistant_response,
+            "agents_used": agents_used,
+        }
+    )
+
+    # Optional: keep only the last 20 turns per user
+    _conversation_turns[user_id] = _conversation_turns[user_id][-20:]
+
+
+def get_conversation_history(user_id: int) -> List[Dict[str, Any]]:
+    """
+    Return all stored conversation turns for this user.
+    Each item has: timestamp, user_message, assistant_response, agents_used.
+    """
+    return _conversation_turns.get(user_id, [])
