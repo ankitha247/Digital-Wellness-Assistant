@@ -22,7 +22,7 @@ _conversation_turns: Dict[int, List[Dict[str, Any]]] = {}
 
 
 # ---------------------------------
-# USER FUNCTIONS
+# USER FUNCTIONS - UPDATED
 # ---------------------------------
 
 def save_user(user_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -31,6 +31,11 @@ def save_user(user_data: Dict[str, Any]) -> Dict[str, Any]:
     user_data is expected to contain at least: email, password_hash, name
     """
     new_id = len(_mock_users) + 1
+    
+    # ADD THIS: Ensure profile_complete is in user_data (default to False)
+    if "profile_complete" not in user_data:
+        user_data["profile_complete"] = False
+    
     user_record = {
         "id": new_id,
         **user_data,
@@ -51,18 +56,45 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     user_id = _email_to_user_id.get(email)
     if user_id is None:
         return None
-    return _mock_users.get(user_id)
+    
+    user = _mock_users.get(user_id)
+    
+    # ADD THIS: Ensure profile_complete field exists (default to True for existing users)
+    if user and "profile_complete" not in user:
+        user["profile_complete"] = True  # Default existing users to True
+    
+    return user
 
 
 def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     """
     Return the user dict for this user_id, or None if not found.
     """
-    return _mock_users.get(user_id)
+    user = _mock_users.get(user_id)
+    
+    # ADD THIS: Ensure profile_complete field exists
+    if user and "profile_complete" not in user:
+        user["profile_complete"] = True  # Default existing users to True
+    
+    return user
+
+
+# ADD THIS NEW FUNCTION: Update user profile_complete status
+def update_user_profile_complete(user_id: int, profile_complete: bool) -> bool:
+    """
+    Update a user's profile_complete status.
+    Returns True if successful, False if user not found.
+    """
+    user = _mock_users.get(user_id)
+    if user is None:
+        return False
+    
+    user["profile_complete"] = profile_complete
+    return True
 
 
 # ---------------------------------
-# PROFILE FUNCTIONS
+# PROFILE FUNCTIONS - UPDATED
 # ---------------------------------
 
 def save_profile(user_id: int, profile_data: Dict[str, Any]) -> None:
