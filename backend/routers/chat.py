@@ -5,7 +5,7 @@ from orchestrator.orchestrator import process_query
 router = APIRouter()
 
 class ChatRequest(BaseModel):
-    user_id: int
+    user_id: str
     message: str
 
 @router.post("/chat")

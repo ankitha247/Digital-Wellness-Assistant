@@ -119,7 +119,7 @@ const SignupPage = () => {
               color: "white",
             }}
           >
-            Wellness.AI
+            FitAura AI
           </h1>
         </div>
         <h2

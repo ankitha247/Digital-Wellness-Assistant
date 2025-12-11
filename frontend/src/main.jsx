@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import AppRouter from './routes/AppRouter';
 import { CustomToaster } from './components/Toaster';
+import { AuthProvider } from "./context/AuthContext";
 
 // Add global styles
 const style = document.createElement('style');
@@ -67,9 +68,12 @@ document.head.appendChild(style);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+  <AuthProvider>
     <BrowserRouter>
       <AppRouter />
       <CustomToaster />
     </BrowserRouter>
-  </React.StrictMode>
+  </AuthProvider>
+</React.StrictMode>
+
 );

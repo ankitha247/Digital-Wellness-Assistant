@@ -52,61 +52,75 @@ const AppRouter = () => {
       />
 
       {/* Protected pages */}
+
+      {/* Profile setup: user must be logged in, but profile can be incomplete */}
       <Route
-        path="/profile-setup"
-        element={
-          <ProtectedRoute>
-            <ProfileSetupPage />
-          </ProtectedRoute>
-        }
-      />
-      
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <AppContainer>
-              <Navbar />
-              <DashboardPage />
-            </AppContainer>
-          </ProtectedRoute>
-        }
-      />
-      
-      <Route
-        path="/assistant"
-        element={
-          <ProtectedRoute>
-            <AppContainer>
-              <Navbar />
-              <WellnessAssistantPage />
-            </AppContainer>
-          </ProtectedRoute>
-        }
-      />
-      
-      <Route
-        path="/history"
-        element={
-          <ProtectedRoute>
-            <AppContainer>
-              <Navbar />
-              <HistoryPage />
-            </AppContainer>
-          </ProtectedRoute>
-        }
-      />
+  path="/profile-setup"
+  element={
+    <ProtectedRoute>
+      <ProfileSetupPage />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/dashboard"
+  element={
+    <ProtectedRoute requireProfileComplete>
+      <AppContainer>
+        <Navbar />
+        <DashboardPage />
+      </AppContainer>
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/assistant"
+  element={
+    <ProtectedRoute requireProfileComplete>
+      <AppContainer>
+        <Navbar />
+        <WellnessAssistantPage />
+      </AppContainer>
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/history"
+  element={
+    <ProtectedRoute requireProfileComplete>
+      <AppContainer>
+        <Navbar />
+        <HistoryPage />
+      </AppContainer>
+    </ProtectedRoute>
+  }
+/>
+
 
       {/* 404 Route */}
       <Route
         path="*"
         element={
           <FullscreenCenter>
-            <div style={{ textAlign: 'center' }}>
-              <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+            <div style={{ textAlign: "center" }}>
+              <h1
+                style={{
+                  fontSize: "2rem",
+                  fontWeight: "bold",
+                  marginBottom: "1rem",
+                }}
+              >
                 404 - Page Not Found
               </h1>
-              <p>Return to <a href="/" style={{ color: '#60a5fa' }}>homepage</a></p>
+              <p>
+                Return to{" "}
+                <a href="/" style={{ color: "#60a5fa" }}>
+                  homepage
+                </a>
+              </p>
             </div>
           </FullscreenCenter>
         }

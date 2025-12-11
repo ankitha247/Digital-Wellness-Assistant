@@ -6,7 +6,9 @@ import { colors } from '../theme/colors';
 const WellnessAssistantPage = () => {
   const [selectedGender, setSelectedGender] = useState('all');
   const [selectedGoal, setSelectedGoal] = useState('general');
-
+  const [query, setQuery] = useState("");
+  const [streamQuery, setStreamQuery] = useState(null);
+  const [finalAnswer, setFinalAnswer] = useState(null);
   // REAL YOUTUBE LINKS FOR WORKOUTS
   const workoutVideos = {
     all: [

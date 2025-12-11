@@ -1,4 +1,3 @@
-// src/pages/LoginPage.jsx
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, ArrowRight, Brain, Chrome } from "lucide-react";
@@ -18,60 +17,161 @@ const LoginPage = () => {
   const [error, setError] = useState("");
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  e.preventDefault();
+  setError("");
+  setLoading(true);
 
+  try {
+    const resp = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: formData.email,
+        password: formData.password,
+      }),
+    });
+
+    // Try to parse JSON. If server returns plain string token, handle that below.
+    let data;
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-        }),
-      });
-
-      console.log("Login Response Status:", response.status);
-
-      const data = await response.json().catch(() => ({}));
-      console.log("Login Response Data:", data);
-
-      if (!response.ok) {
-        throw new Error(data.detail || "Login failed");
+      data = await resp.json();
+    } catch (parseErr) {
+      // resp body wasn't JSON (maybe plain token string). Try to read text.
+      try {
+        const text = await resp.text();
+        // If text looks like a JWT (starts with eyJ) treat as token
+        if (typeof text === "string" && text.startsWith("eyJ")) {
+          data = text; // token string
+        } else {
+          data = {};
+        }
+      } catch {
+        data = {};
       }
+    }
 
-      // ✅ Save token for global auth checks (App.jsx, etc.)
-      localStorage.setItem("token", "login-temp-token"); // dummy token for now
+    if (!resp.ok) {
+      // If data is an object it might have detail or message
+      const errMsg = (data && data.detail) || (data && data.message) || "Login failed";
+      throw new Error(errMsg);
+    }
 
-      // ✅ Save basic user info in localStorage for profile/history use
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
+    // Determine token and user from many possible response shapes
+    let token;
+    let userFromServer = null;
+
+    if (typeof data === "string") {
+      // Backend returned token string only
+      token = data;
+    } else {
+      // Backend returned an object
+      token = data.token || data.accessToken || data.jwt || undefined;
+      userFromServer = data.user || data.userData || null;
+
+      // sometimes backend returns user fields at top-level
+      if (!userFromServer && (data.id || data.email || data.name || data.profile_complete !== undefined)) {
+        userFromServer = {
           id: data.id,
           email: data.email,
           name: data.name,
-          profile_complete: true, // existing users go straight to dashboard
-        })
-      );
-
-      // ✅ Also update auth context (used by Navbar, ProtectedRoute, etc.)
-      login({
-        token: "login-temp-token", // later replace with real JWT from backend
-        userId: data.id,
-        name: data.name,
-        email: data.email,
-      });
-
-      // ✅ EXISTING USER FLOW → DASHBOARD
-      navigate("/dashboard");
-    } catch (err) {
-      console.error("Login error:", err);
-      setError(err.message || "Network error. Check if backend is running.");
-    } finally {
-      setLoading(false);
+          ...(data.profile_complete !== undefined ? { profile_complete: data.profile_complete } : {}),
+        };
+      }
     }
-  };
+
+    // Persist token separately (if available)
+    if (token) {
+      localStorage.setItem("token", token);
+    }
+
+    // If backend supplied a user object, save it. Otherwise keep an empty object.
+    let userObj = userFromServer ? { ...userFromServer } : {};
+
+    // If the app previously stored a 'user' that is just a token string (old bug),
+    // try to recover gracefully: parse and convert to object.
+    const rawStored = localStorage.getItem("user");
+    if (rawStored) {
+      try {
+        const parsed = JSON.parse(rawStored);
+        // If parsed is a string (somehow stored as JSON string), ignore it.
+        if (parsed && typeof parsed === "object") {
+          // merge existing fields but don't overwrite server-provided ones
+          userObj = { ...parsed, ...userObj };
+        }
+      } catch {
+        // rawStored wasn't JSON (maybe a plain token). Ignore it.
+      }
+    }
+
+    // Ensure we don't accidentally set 'user' to a string anywhere
+    localStorage.setItem("user", JSON.stringify(userObj));
+
+    // Update auth context (some implementations expect (token, user) others expect (user))
+    try {
+      // try the common signature first
+      login(token, userObj);
+    } catch (err) {
+      try {
+        // fallback: maybe login expects just the user object or token only
+        login(userObj);
+      } catch {
+        try {
+          login(token);
+        } catch {
+          // ignore if login is different; localStorage is the source of truth now
+        }
+      }
+    }
+
+    // Determine profile completion status (prefer server-provided, else try /users/me)
+    let completed = false;
+    if (userObj && typeof userObj.profile_complete !== "undefined") {
+      completed = !!userObj.profile_complete;
+    } else if (data && typeof data.profile_complete !== "undefined") {
+      completed = !!data.profile_complete;
+    } else if (token) {
+      try {
+        const meResp = await fetch(`${API_BASE_URL}/users/me`, {
+          headers: { Authorization: token ? `Bearer ${token}` : "" },
+        });
+        if (meResp.ok) {
+          const meData = await meResp.json().catch(() => ({}));
+          completed =
+            meData?.profile_complete === true ||
+            meData?.profile?.profile_complete === true ||
+            meData?.profileCompleted === true;
+          if (meData && typeof meData === "object") {
+            userObj = { ...userObj, ...meData };
+            localStorage.setItem("user", JSON.stringify(userObj));
+          }
+        }
+      } catch {
+        // ignore errors
+      }
+    }
+
+    // Persist profile flags safely
+    try {
+      const current = JSON.parse(localStorage.getItem("user") || "{}");
+      const safeObj = typeof current === "object" ? current : {};
+      safeObj.profile_complete = completed;
+      localStorage.setItem("user", JSON.stringify(safeObj));
+    } catch {
+      // fallback: if parsing fails, overwrite with a new object
+      localStorage.setItem("user", JSON.stringify({ profile_complete: completed }));
+    }
+    localStorage.setItem("profileCompleted", completed ? "true" : "false");
+
+    // Navigate appropriately
+    if (completed) navigate("/dashboard");
+    else navigate("/profile-setup");
+  } catch (err) {
+    console.error("Login error:", err);
+    setError(err.message || "Network error. Check if backend is running.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleGoogleLogin = () => {
     window.location.href = `${API_BASE_URL}/auth/google/login`;

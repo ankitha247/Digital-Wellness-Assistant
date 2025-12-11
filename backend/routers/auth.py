@@ -7,19 +7,23 @@ from utils.jwt_handler import create_jwt_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
 class SignupRequest(BaseModel):
     email: str
     name: str
     password: str
 
+
 class LoginRequest(BaseModel):
     email: str
     password: str
+
 
 @router.post("/signup")
 def signup(req: SignupRequest):
     existing = get_user_by_email(req.email)
     if existing:
+        # keep the same error shape as before
         raise HTTPException(status_code=400, detail="Email already registered")
 
     # Save user with profile_complete set to False
@@ -32,7 +36,8 @@ def signup(req: SignupRequest):
         }
     )
 
-    token = create_jwt_token(saved_user["id"])
+    # create token using the saved user's id (saved_user['id'] is string ObjectId)
+    token = create_jwt_token(str(saved_user["id"]))
 
     return {
         "id": saved_user["id"],
@@ -43,6 +48,7 @@ def signup(req: SignupRequest):
         "message": "User created successfully. Please complete your profile.",
     }
 
+
 @router.post("/login")
 def login(req: LoginRequest):
     user = get_user_by_email(req.email)
@@ -52,15 +58,15 @@ def login(req: LoginRequest):
     if not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token = create_jwt_token(user["id"])
+    token = create_jwt_token(str(user["id"]))
 
-    # Check if user has profile_complete field, default to True
-    profile_complete = user.get("profile_complete", True)
+    # Check if user has profile_complete field, default to False for new users
+    profile_complete = bool(user.get("profile_complete", False))
 
     return {
         "id": user["id"],
         "email": user["email"],
-        "name": user["name"],
+        "name": user.get("name"),
         "profile_complete": profile_complete,
         "token": token,
         "message": "Login successful",

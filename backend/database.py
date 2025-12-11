@@ -1,128 +1,204 @@
 # backend/database.py
+# MongoDB-backed drop-in replacement for the mock in-memory DB.
+# Keeps the same function names used by your app but avoids crashing
+# the server when the DB is unreachable. Provides clear runtime errors.
 
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from bson.objectid import ObjectId
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
+import os
+from dotenv import load_dotenv
 
-# ---------------------------------
-# In-memory "database" structures
-# ---------------------------------
+load_dotenv()
 
-# user_id -> user dict
-_mock_users: Dict[int, Dict[str, Any]] = {}
+MONGO_URI = os.getenv("MONGODB_URI")
+if not MONGO_URI:
+    raise RuntimeError("MONGODB_URI missing in .env")
 
-# email -> user_id
-_email_to_user_id: Dict[str, int] = {}
+# Try to connect but don't let failures crash the process.
+client = None
+db = None
+users_collection = None
+profiles_collection = None
+conversation_collection = None
 
-# user_id -> profile dict
-_mock_profiles: Dict[int, Dict[str, Any]] = {}
+# Determine DB name from URI (the path part before query params), fallback to FitAura
+try:
+    db_name = MONGO_URI.split("/")[-1].split("?")[0] or "FitAura"
+except Exception:
+    db_name = "FitAura"
 
-# user_id -> list of conversation turns
-# each turn: {timestamp, user_message, assistant_response, agents_used}
-_conversation_turns: Dict[int, List[Dict[str, Any]]] = {}
+try:
+    # Use a short timeout so server starts quickly if DNS/network fails
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    # Small ping to validate connection
+    client.admin.command("ping")
+    db = client[db_name]
+    users_collection = db["users"]
+    profiles_collection = db["profiles"]
+    conversation_collection = db["conversation_turns"]
+    print("MongoDB connected.")
+except Exception as e:
+    # Keep server alive — log helpful message
+    print("WARNING: MongoDB connection failed at startup:", repr(e))
+    client = None
+    db = None
+    users_collection = None
+    profiles_collection = None
+    conversation_collection = None
 
 
-# ---------------------------------
-# USER FUNCTIONS - UPDATED
-# ---------------------------------
+# Helper to ensure collection availability
+def _ensure_collection(coll, name: str = "collection"):
+    if coll is None:
+        raise RuntimeError(
+            f"Database not connected. '{name}' is unavailable. "
+            "Check MONGODB_URI, network access, DNS, or install dnspython for mongodb+srv."
+        )
+    return coll
+
+
+# ------------------------------
+# USER FUNCTIONS (same names as before)
+# ------------------------------
 
 def save_user(user_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Save a new user and return the full user record (including its id).
-    user_data is expected to contain at least: email, password_hash, name
+    Raises ValueError for duplicate email, RuntimeError if DB is unavailable.
     """
-    new_id = len(_mock_users) + 1
-    
-    # ADD THIS: Ensure profile_complete is in user_data (default to False)
+    coll = _ensure_collection(users_collection, "users")
+
+    # default flags
     if "profile_complete" not in user_data:
         user_data["profile_complete"] = False
-    
-    user_record = {
-        "id": new_id,
-        **user_data,
-    }
-    _mock_users[new_id] = user_record
 
-    email = user_data.get("email")
-    if email:
-        _email_to_user_id[email] = new_id
+    existing = coll.find_one({"email": user_data.get("email")})
+    if existing:
+        raise ValueError("email_already_registered")
 
+    result = coll.insert_one(user_data)
+    inserted_id = result.inserted_id
+    user_record = coll.find_one({"_id": inserted_id})
+    user_record["id"] = str(user_record["_id"])
     return user_record
 
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """Return the user dict for this email, or None if not found."""
+    coll = _ensure_collection(users_collection, "users")
+    user = coll.find_one({"email": email})
+    if not user:
+        return None
+    user["id"] = str(user["_id"])
+    # ensure profile_complete key exists on record
+    if "profile_complete" not in user:
+        try:
+            user["profile_complete"] = True
+            coll.update_one({"_id": user["_id"]}, {"$set": {"profile_complete": True}})
+        except Exception:
+            # ignore write failure here
+            pass
+    return user
+
+
+def get_user_by_id(user_id: Any) -> Optional[Dict[str, Any]]:
     """
-    Return the user dict for this email, or None if not found.
+    Return the user dict for this user_id (string or ObjectId), or None if not found.
+    Accepts either the string form of ObjectId or the literal ObjectId.
     """
-    user_id = _email_to_user_id.get(email)
+    coll = _ensure_collection(users_collection, "users")
+
     if user_id is None:
         return None
-    
-    user = _mock_users.get(user_id)
-    
-    # ADD THIS: Ensure profile_complete field exists (default to True for existing users)
-    if user and "profile_complete" not in user:
-        user["profile_complete"] = True  # Default existing users to True
-    
+
+    query = None
+    try:
+        query = {"_id": ObjectId(user_id)}
+    except Exception:
+        query = {"id": str(user_id)}
+
+    user = coll.find_one(query)
+    if not user:
+        return None
+
+    user["id"] = str(user["_id"])
+    if "profile_complete" not in user:
+        try:
+            user["profile_complete"] = True
+            coll.update_one({"_id": user["_id"]}, {"$set": {"profile_complete": True}})
+        except Exception:
+            pass
     return user
 
 
-def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
-    """
-    Return the user dict for this user_id, or None if not found.
-    """
-    user = _mock_users.get(user_id)
-    
-    # ADD THIS: Ensure profile_complete field exists
-    if user and "profile_complete" not in user:
-        user["profile_complete"] = True  # Default existing users to True
-    
-    return user
-
-
-# ADD THIS NEW FUNCTION: Update user profile_complete status
-def update_user_profile_complete(user_id: int, profile_complete: bool) -> bool:
+def update_user_profile_complete(user_id: Any, profile_complete: bool) -> bool:
     """
     Update a user's profile_complete status.
     Returns True if successful, False if user not found.
     """
-    user = _mock_users.get(user_id)
-    if user is None:
+    coll = _ensure_collection(users_collection, "users")
+
+    if user_id is None:
         return False
-    
-    user["profile_complete"] = profile_complete
-    return True
+
+    try:
+        res = coll.update_one({"_id": ObjectId(user_id)}, {"$set": {"profile_complete": profile_complete}})
+    except Exception:
+        res = coll.update_one({"id": str(user_id)}, {"$set": {"profile_complete": profile_complete}})
+
+    return res.matched_count > 0
 
 
-# ---------------------------------
-# PROFILE FUNCTIONS - UPDATED
-# ---------------------------------
+# ------------------------------
+# PROFILE FUNCTIONS (same names as before)
+# ------------------------------
 
-def save_profile(user_id: int, profile_data: Dict[str, Any]) -> None:
+def save_profile(user_id: Any, profile_data: Dict[str, Any]) -> None:
     """
     Create or update a profile for the given user_id.
-    Example fields: age, gender, weight, height, diet_type, activity_level,
-    sleep_hours, health_conditions, fitness_goal, etc.
+    Stores profile_data in profiles_collection with user_id (string).
     """
-    _mock_profiles[user_id] = {
-        "user_id": user_id,
-        **profile_data,
-    }
+    coll = _ensure_collection(profiles_collection, "profiles")
+
+    if user_id is None:
+        raise ValueError("user_id_required")
+
+    uid = str(user_id)
+    profile_doc = {"user_id": uid, **profile_data}
+    coll.update_one({"user_id": uid}, {"$set": profile_doc}, upsert=True)
+
+    # Also mark user's profile_complete = True (best effort)
+    try:
+        update_user_profile_complete(user_id, True)
+    except Exception:
+        pass
 
 
-def get_profile(user_id: int) -> Dict[str, Any]:
+def get_profile(user_id: Any) -> Dict[str, Any]:
     """
     Return the profile dict for this user_id.
     If no profile exists, return an empty dict.
     """
-    return _mock_profiles.get(user_id, {})
+    coll = _ensure_collection(profiles_collection, "profiles")
+    if user_id is None:
+        return {}
+    uid = str(user_id)
+    profile = coll.find_one({"user_id": uid})
+    if not profile:
+        return {}
+    profile["id"] = str(profile["_id"])
+    return profile
 
 
-# ---------------------------------
-# CONVERSATION HISTORY (for /history API)
-# ---------------------------------
+# ------------------------------
+# CONVERSATION HISTORY (same names as before)
+# ------------------------------
 
 def append_conversation_turn(
-    user_id: int,
+    user_id: Any,
     user_message: str,
     assistant_response: str,
     agents_used: List[str],
@@ -133,26 +209,31 @@ def append_conversation_turn(
     - user_message
     - assistant_response
     - agents_used
+    Keeps turns in an array per user_id doc.
     """
-    if user_id not in _conversation_turns:
-        _conversation_turns[user_id] = []
-
-    _conversation_turns[user_id].append(
-        {
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "user_message": user_message,
-            "assistant_response": assistant_response,
-            "agents_used": agents_used,
-        }
+    coll = _ensure_collection(conversation_collection, "conversation_turns")
+    uid = str(user_id)
+    turn = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "user_message": user_message,
+        "assistant_response": assistant_response,
+        "agents_used": agents_used,
+    }
+    coll.update_one(
+        {"user_id": uid},
+        {"$push": {"turns": turn}},
+        upsert=True,
     )
 
-    # Optional: keep only the last 20 turns per user
-    _conversation_turns[user_id] = _conversation_turns[user_id][-20:]
 
-
-def get_conversation_history(user_id: int) -> List[Dict[str, Any]]:
+def get_conversation_history(user_id: Any) -> List[Dict[str, Any]]:
     """
     Return all stored conversation turns for this user.
     Each item has: timestamp, user_message, assistant_response, agents_used.
     """
-    return _conversation_turns.get(user_id, [])
+    coll = _ensure_collection(conversation_collection, "conversation_turns")
+    uid = str(user_id)
+    doc = coll.find_one({"user_id": uid})
+    if not doc:
+        return []
+    return doc.get("turns", [])

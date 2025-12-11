@@ -1,30 +1,34 @@
 // src/components/ProtectedRoute.jsx
-import React from 'react';
-import { Navigate } from 'react-router-dom';
+import React from "react";
+import { Navigate, useLocation } from "react-router-dom";
 
-const ProtectedRoute = ({ children }) => {
-  // Check if user is logged in (has user data in localStorage)
-  const user = localStorage.getItem('user');
-  
-  if (!user) {
-    // If not logged in, redirect to login page
-    return <Navigate to="/login" replace />;
+const ProtectedRoute = ({ children, requireProfileComplete = false }) => {
+  const location = useLocation();
+
+  // ✅ Read auth state from localStorage
+  const token = localStorage.getItem("token");
+
+  const rawUser = localStorage.getItem("user");
+  let user = null;
+  try {
+    user = rawUser ? JSON.parse(rawUser) : null;
+  } catch {
+    user = null;
   }
-  
-  // Check if profile is completed
-  const profileCompleted = localStorage.getItem('profile_completed');
-  const currentPath = window.location.pathname;
-  
-  // If trying to access dashboard without completing profile, redirect to profile setup
-  if (!profileCompleted && currentPath === '/dashboard') {
+
+  const profileCompleted = user?.profile_complete === true;
+
+  // 🔒 Not logged in → go to login
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  // 🔒 Logged in but profile not done, and this route requires completed profile
+  if (requireProfileComplete && !profileCompleted) {
     return <Navigate to="/profile-setup" replace />;
   }
-  
-  // If trying to access profile setup after already completing it, redirect to dashboard
-  if (profileCompleted && currentPath === '/profile-setup') {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
+
+  // ✅ All good → render the protected page
   return children;
 };
 

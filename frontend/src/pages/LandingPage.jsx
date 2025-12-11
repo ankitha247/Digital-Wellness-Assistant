@@ -39,7 +39,7 @@ const LandingPage = () => {
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}>
-              FitAura
+              FitAura AI
             </h1>
             <p style={{
               fontSize: '0.75rem',
